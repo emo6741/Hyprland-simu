@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PaperVM</title>
+<style>
+:root{
+  --bg0:#0c0d12; --bg1:#15161d; --bg2:#1b1d26; --panel:rgba(14,15,20,.82);
+  --line:#2a2d3a; --fg:#c9cdd8; --fg-dim:#7a7f92; --accent:#5fb0ff;
+  --green:#6ee7a0; --yellow:#f0d264; --red:#ff6b6b; --cyan:#7fd9d9;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;padding:0;overflow:hidden;background:var(--bg0);
+  font-family:Inter,system-ui,sans-serif;color:var(--fg);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+#desktop{position:absolute;inset:0;top:var(--panel-h,34px);
+  background:
+    radial-gradient(circle at 15% 20%,#3a1030 0%,transparent 45%),
+    radial-gradient(circle at 85% 15%,#0d1f3d 0%,transparent 50%),
+    radial-gradient(circle at 60% 90%,#2a0f18 0%,transparent 55%),
+    linear-gradient(135deg,#0a0b10,#120e18 60%,#0a0e16);}
+.win{position:absolute;background:var(--bg1);border:1px solid var(--line);border-radius:6px;
+  display:flex;flex-direction:column;overflow:hidden;min-height:0;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  transition:top .28s cubic-bezier(.4,0,.2,1),left .28s cubic-bezier(.4,0,.2,1),
+             width .28s cubic-bezier(.4,0,.2,1),height .28s cubic-bezier(.4,0,.2,1),
+             opacity .18s ease,transform .18s ease;}
+.win.opening{animation:pop .18s ease-out;}
+.win.closing{opacity:0;transform:scale(.94);pointer-events:none;}
+.win.focused{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 24px rgba(0,0,0,.4);}
+@keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+#win-appsoverview{position:absolute;top:50%;left:50%;width:min(460px,88%);height:min(460px,64vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-appsoverview.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+#win-calculator{position:absolute;top:50%;left:50%;width:min(260px,80%);height:min(380px,58vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-calculator.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+#win-imageeditor{position:absolute;top:50%;left:50%;width:min(480px,92%);height:min(440px,66vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-imageeditor.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+#win-musicplayer{position:absolute;top:50%;left:50%;width:min(320px,86%);height:min(420px,60vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-musicplayer.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+#win-mail{position:absolute;top:50%;left:50%;width:min(520px,92%);height:min(420px,62vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-mail.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+#win-chat{position:absolute;top:50%;left:50%;width:min(360px,88%);height:min(440px,62vh);
+  transform:translate(-50%,-50%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .16s ease,transform .16s ease;z-index:80;}
+#win-chat.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;}
+.apps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;padding:16px;}
+.apps-grid button{display:flex;flex-direction:column;align-items:center;gap:8px;
+  background:none;border:none;color:var(--fg);cursor:pointer;padding:12px 6px;border-radius:8px;font-size:12px;}
+.apps-grid button:hover{background:#20222c;}
+.apps-grid svg{width:34px;height:34px;}
+.icon{width:16px;height:16px;display:inline-block;vertical-align:-3px;flex:0 0 auto;}
+.icon-sm{width:14px;height:14px;vertical-align:-2px;margin-right:5px;display:inline-block;}
+.icon svg,.icon-sm svg,.icon-slot svg{width:100%;height:100%;display:block;}
+.titlebar button svg{width:14px;height:14px;display:block;}
+body.light{--bg0:#eef0f3;--bg1:#ffffff;--bg2:#f3f4f6;--line:#d7d9de;--fg:#1c1e24;--fg-dim:#6c6f78;}
+
+/* HEADER BAR (shared by GNOME-style apps) */
+.hdrbar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 8px;
+  background:var(--bg2);border-bottom:1px solid var(--line);}
+.hdrbar button.flat{background:none;border:none;color:var(--fg);cursor:pointer;
+  padding:5px 9px;border-radius:6px;font-size:12px;display:flex;align-items:center;gap:5px;}
+.hdrbar button.flat:hover{background:rgba(127,127,127,.15);}
+.hdrbar .addr{flex:1;background:rgba(127,127,127,.12);border:1px solid var(--line);
+  border-radius:6px;padding:5px 10px;font-size:12px;color:var(--fg);outline:none;font-family:inherit;}
+.hdrbar select.addr{flex:0 0 160px;}
+.hdrbar .spacer{flex:1;}
+.hdrbar .title{font-size:12.5px;color:var(--fg-dim);}
+
+/* SETTINGS */
+.settings-wrap{display:flex;height:100%;}
+.settings-side{width:150px;flex:0 0 auto;border-right:1px solid var(--line);padding:8px 6px;overflow:auto;}
+.settings-side div{padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--fg-dim);font-size:12.5px;}
+.settings-side div:hover{background:rgba(127,127,127,.15);color:var(--fg);}
+.settings-side div.active{background:#20344a;color:var(--accent);}
+.settings-main{flex:1;overflow:auto;padding:16px 22px;}
+.settings-main h3{margin:0 0 8px;font-size:15px;}
+.settings-row{display:flex;justify-content:space-between;align-items:center;
+  padding:11px 0;border-bottom:1px solid rgba(127,127,127,.15);font-size:13px;}
+.settings-row:last-child{border-bottom:none;}
+.theme-opt{display:flex;gap:10px;}
+.theme-card{width:64px;height:42px;border-radius:8px;cursor:pointer;border:2px solid var(--line);}
+.theme-card.active{border-color:var(--accent);}
+.swatches{display:flex;gap:8px;}
+.swatch{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+.swatch.active{border-color:var(--fg);}
+
+/* SOFTWARE */
+.store-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;padding:14px;}
+.store-card{background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  padding:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-start;}
+.store-card .name{font-weight:600;font-size:13px;}
+.store-card .desc{font-size:11px;color:var(--fg-dim);}
+.store-card button{margin-top:5px;background:var(--accent);color:#04121f;border:none;
+  border-radius:14px;padding:4px 13px;font-size:11.5px;font-weight:600;cursor:pointer;}
+.store-card button.installed{background:rgba(127,127,127,.2);color:var(--fg-dim);}
+
+/* CALCULATOR */
+.calc-display{padding:22px 16px 8px;text-align:right;font-size:32px;font-family:monospace;color:var(--fg);}
+.calc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:8px 14px 16px;flex:1;}
+.calc-grid button{background:rgba(127,127,127,.14);border:none;border-radius:10px;
+  color:var(--fg);font-size:16px;cursor:pointer;}
+.calc-grid button:active{filter:brightness(1.3);}
+.calc-grid button.op{background:rgba(95,176,255,.16);color:var(--accent);}
+.calc-grid button.eq{background:var(--accent);color:#04121f;font-weight:700;}
+.calc-grid button.wide{grid-column:span 2;}
+
+/* TEXT EDITOR */
+.editor-body textarea{width:100%;height:100%;background:#14151b;color:#d8dce6;border:none;
+  outline:none;resize:none;font-family:monospace;font-size:13px;padding:12px;}
+
+/* WEB */
+.web-body{overflow:auto;padding:22px 26px;background:#0f1015;}
+.web-body h2{margin-top:0;}
+.web-body a{color:var(--accent);}
+.titlebar{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  padding:5px 10px;background:var(--bg2);border-bottom:1px solid var(--line);
+  font-size:12px;color:var(--fg-dim);}
+.titlebar .t{color:var(--fg);font-weight:600;}
+.titlebar button{background:none;border:none;color:var(--fg-dim);cursor:pointer;
+  font-size:13px;padding:0 4px;}
+.titlebar button:hover{color:var(--red);}
+.body{flex:1;min-height:0;overflow:auto;padding:10px 12px;font-size:12.5px;line-height:1.5;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#333648;border-radius:4px;}
+
+/* PANEL */
+#panel{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;height:var(--panel-h,34px);
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--panel);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+  padding:0 12px;font-size:12.5px;z-index:50;}
+#panel.opaque{background:var(--bg1);backdrop-filter:none;}
+#panel .seg{display:flex;align-items:center;gap:14px;}
+#panel .logo{color:var(--accent);font-weight:700;}
+#panel button.plink{background:none;border:none;color:var(--fg);font-size:12.5px;cursor:pointer;padding:2px 4px;}
+#panel button.plink:hover{color:var(--accent);}
+#ws-indicator{display:flex;gap:4px;}
+#ws-indicator span{width:14px;height:5px;border-radius:2px;background:#333648;}
+#ws-indicator span.active{background:var(--accent);}
+#panel .mid{color:var(--fg-dim);}
+#panel .right{gap:10px;font-variant-numeric:tabular-nums;color:var(--fg-dim);}
+#panel .right b{color:var(--fg);font-weight:500;}
+
+/* TERMINAL */
+.term{font-family:'JetBrains Mono',Menlo,Consolas,monospace;background:#14151b;
+  color:#d8dce6;white-space:pre-wrap;word-break:break-word;}
+.term .prompt{color:var(--green);}
+.term .path{color:var(--accent);}
+.term-line-input{display:flex;}
+.term-line-input span{white-space:pre;}
+.term-input{flex:1;background:none;border:none;outline:none;color:#fff;
+  font-family:inherit;font-size:inherit;}
+.arch-logo{color:var(--accent);font-size:11px;line-height:1.05;white-space:pre;}
+.dim{color:var(--fg-dim);}
+.err{color:var(--red);}
+
+/* MONITOR */
+.mon-sec{margin-bottom:12px;}
+.mon-sec h4{margin:0 0 6px;font-size:11px;color:var(--fg-dim);font-weight:600;letter-spacing:.03em;}
+.bar{height:8px;background:#232532;border-radius:3px;overflow:hidden;margin:3px 0;}
+.bar i{display:block;height:100%;background:var(--accent);}
+.core-row{display:flex;justify-content:space-between;font-family:monospace;font-size:11px;color:var(--fg-dim);margin:2px 0;}
+.core-row b{color:var(--fg);width:34px;display:inline-block;}
+table.proc{width:100%;border-collapse:collapse;font-family:monospace;font-size:11px;}
+table.proc th{text-align:left;color:var(--fg-dim);font-weight:600;padding:2px 6px 4px 0;}
+table.proc td{padding:1px 6px 1px 0;color:var(--fg-dim);}
+table.proc td.p{color:var(--fg);}
+
+/* FILES */
+.files-wrap{display:flex;height:100%;}
+.files-side{width:130px;flex:0 0 auto;border-right:1px solid var(--line);
+  padding:8px 6px;font-size:12px;overflow:auto;}
+.files-side div{padding:5px 8px;border-radius:4px;cursor:pointer;color:var(--fg-dim);}
+.files-side div:hover{background:#22242f;color:var(--fg);}
+.files-side div.active{background:#20344a;color:var(--accent);}
+.files-main{flex:1;overflow:auto;}
+table.flist{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.flist th{text-align:left;font-weight:500;color:var(--fg-dim);padding:5px 10px;
+  border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg1);}
+table.flist td{padding:5px 10px;border-bottom:1px solid #1f212b;}
+table.flist tr:hover td{background:#1e2029;}
+#toast-wrap{position:fixed;top:44px;right:12px;z-index:100;display:flex;flex-direction:column;gap:6px;}
+.toast{background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--accent);
+  padding:8px 12px;border-radius:4px;font-size:12px;max-width:260px;animation:pop .15s ease-out;}
+
+#boot{position:fixed;inset:0;background:#000;color:#7fd9d9;font-family:monospace;
+  font-size:13px;padding:24px;z-index:999;white-space:pre-line;}
+
+@media (max-width:760px){
+  #panel .mid{display:none;}
+}
+</style>
+</head>
+<body>
+
+<div id="boot"></div>
+
+<div id="panel" style="display:none">
+  <div class="seg">
+    <span class="logo" id="logoIcon"></span>
+    <button class="plink" id="wsCycle">Workspace <span id="wsNum">1</span></button>
+    <div id="ws-indicator"><span class="active"></span><span></span><span></span><span></span></div>
+    <button class="plink" id="appsBtn">Apps</button>
+    <button class="plink" id="placesBtn">Places</button>
+  </div>
+  <div class="seg mid"><span id="clockDate"></span></div>
+  <div class="seg right">
+    <span>CPU <b id="pCpu">3%</b></span>
+    <span>RAM <b id="pRam">43%</b></span>
+    <span>↓<b id="pDown">1 KB/s</b></span>
+    <span>↑<b id="pUp">412 B/s</b></span>
+    <span><b id="pTemp">50°C</b></span>
+    <span id="pClock" style="color:var(--fg)"></span>
+    <span id="battIcon"></span><b id="pBat">79%</b>
+  </div>
+</div>
+
+<div id="desktop" style="display:none">
+  <div class="win focused" id="win-monitor" data-app="monitor">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="monitor"></span>System Monitor</span><button data-close="monitor" aria-label="Close"></button></div>
+    <div class="body" id="body-monitor"></div>
+  </div>
+  <div class="win" id="win-terminal" data-app="terminal">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="terminal"></span>Terminal — mike@archlinux</span><button data-close="terminal" aria-label="Close"></button></div>
+    <div class="body term" id="body-terminal"></div>
+  </div>
+  <div class="win" id="win-files" data-app="files">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="folder"></span>Files</span><button data-close="files" aria-label="Close"></button></div>
+    <div class="body" id="body-files" style="padding:0;"><div class="files-wrap">
+      <div class="files-side" id="filesSide"></div>
+      <div class="files-main"><table class="flist"><thead><tr><th>Name</th><th>Size</th><th>Modified</th></tr></thead>
+      <tbody id="filesBody"></tbody></table></div>
+    </div></div>
+  </div>
+  <div class="win" id="win-settings" data-app="settings">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="gear"></span>Settings</span><button data-close="settings" aria-label="Close"></button></div>
+    <div class="body" id="body-settings" style="padding:0;"><div class="settings-wrap">
+      <div class="settings-side" id="settingsSide"></div>
+      <div class="settings-main" id="settingsMain"></div>
+    </div></div>
+  </div>
+  <div class="win" id="win-software" data-app="software">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="store"></span>Software</span><button data-close="software" aria-label="Close"></button></div>
+    <div class="body store-grid" id="softwareGrid" style="padding:0;"></div>
+  </div>
+  <div class="win" id="win-texteditor" data-app="texteditor">
+    <div class="hdrbar">
+      <button class="flat" data-editor="new">New</button>
+      <select id="editorOpenList" class="addr"></select>
+      <input id="editorNameInput" class="addr" placeholder="filename.txt" style="display:none;flex:0 0 130px;">
+      <span class="spacer"></span>
+      <span class="title" id="editorTitle">Untitled</span>
+      <span class="spacer"></span>
+      <button class="flat" data-editor="save">Save</button>
+      <button class="flat" data-close="texteditor" aria-label="Close" style="padding:5px 7px;"></button>
+    </div>
+    <div class="body editor-body" style="padding:0;"><textarea id="editorTextarea" spellcheck="false" placeholder="Start typing…"></textarea></div>
+  </div>
+  <div class="win" id="win-web" data-app="web">
+    <div class="hdrbar">
+      <button class="flat" data-web-nav="back">‹</button>
+      <button class="flat" data-web-nav="fwd">›</button>
+      <button class="flat" data-web-nav="reload">⟳</button>
+      <input id="webAddr" class="addr" value="paper://home">
+      <button class="flat" data-web-nav="home">Home</button>
+      <button class="flat" data-close="web" aria-label="Close" style="padding:5px 7px;"></button>
+    </div>
+    <div class="body web-body" id="webBody"></div>
+  </div>
+  <div class="win" id="win-calculator" data-app="calculator">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="calc"></span>Calculator</span><button data-close="calculator" aria-label="Close"></button></div>
+    <div class="calc-display" id="calcDisplay">0</div>
+    <div class="calc-grid">
+      <button class="op" data-calc="AC">AC</button>
+      <button class="op" data-calc="%">%</button>
+      <button class="op" data-calc="÷">÷</button>
+      <button class="op" data-calc="×">×</button>
+      <button data-calc="7">7</button><button data-calc="8">8</button><button data-calc="9">9</button><button class="op" data-calc="-">−</button>
+      <button data-calc="4">4</button><button data-calc="5">5</button><button data-calc="6">6</button><button class="op" data-calc="+">+</button>
+      <button data-calc="1">1</button><button data-calc="2">2</button><button data-calc="3">3</button><button class="eq" data-calc="=">=</button>
+      <button class="wide" data-calc="0">0</button><button data-calc=".">.</button>
+    </div>
+  </div>
+  <div class="win" id="win-imageeditor" data-app="imageeditor">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="image"></span>Image Editor</span><button data-close="imageeditor" aria-label="Close"></button></div>
+    <div class="body" id="body-imageeditor" style="padding:8px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="swatches" id="imgColors"></div>
+        <span class="spacer"></span>
+        <button class="flat" data-imgedit="clear">Clear</button>
+      </div>
+      <canvas id="imgCanvas" style="flex:1;width:100%;background:#fff;border-radius:6px;cursor:crosshair;touch-action:none;"></canvas>
+    </div>
+  </div>
+  <div class="win" id="win-musicplayer" data-app="musicplayer">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="music"></span>Music Player</span><button data-close="musicplayer" aria-label="Close"></button></div>
+    <div class="body" id="body-musicplayer" style="padding:10px;"></div>
+  </div>
+  <div class="win" id="win-mail" data-app="mail">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="mail"></span>Mail</span><button data-close="mail" aria-label="Close"></button></div>
+    <div class="body" id="body-mail" style="padding:0;"><div class="files-wrap">
+      <div class="files-side" id="mailList" style="width:190px;"></div>
+      <div class="files-main" id="mailReader" style="padding:14px;"></div>
+    </div></div>
+  </div>
+  <div class="win" id="win-chat" data-app="chat">
+    <div class="titlebar"><span class="t"><span class="icon-slot" data-icon="chat"></span>Chat</span><button data-close="chat" aria-label="Close"></button></div>
+    <div class="body" style="padding:0;display:flex;flex-direction:column;">
+      <div id="chatLog" style="flex:1;overflow:auto;padding:10px 12px;font-size:12.5px;"></div>
+      <div style="display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);">
+        <input id="chatInput" class="addr" placeholder="Mesaj yaz…" style="flex:1">
+        <button class="flat" data-chat="send">Gönder</button>
+      </div>
+    </div>
+  </div>
+  <div class="win" id="win-appsoverview" data-app="appsoverview">
+    <div class="titlebar"><span class="t">Apps</span><button data-close="appsoverview" aria-label="Close"></button></div>
+    <div class="body apps-grid" id="appsGrid"></div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+<input type="file" id="wallpaperFileInput" accept="image/*" style="display:none">
+
+<script>
+/* ===================== ICON THEME (SVG, no emoji) ===================== */
+const ICONS = {
+  logo:`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 3 20h18L12 3z"/><path d="M12 9.5 7 20h10L12 9.5z" fill="currentColor" stroke="none"/></svg>`,
+  terminal:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>`,
+  folder:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v10A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5v-12z"/></svg>`,
+  file:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M14 3.5V8h4"/></svg>`,
+  monitor:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4M7 8l2.5 4L12 9l2 3 3-5"/></svg>`,
+  close:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  battery:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8" width="17" height="8" rx="1.5"/><path d="M21.5 10.5v3"/><rect x="4.5" y="10" width="11" height="4" fill="currentColor" stroke="none"/></svg>`,
+  weather:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 15.5A5.5 5.5 0 1 0 9.6 12.8 4 4 0 1 0 8 20h11a4 4 0 0 0 1-8.5z"/></svg>`,
+  apps:`<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="18" cy="6" r="1.8"/><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/><circle cx="6" cy="18" r="1.8"/><circle cx="12" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/></svg>`,
+  gear:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.6M12 18.4V21M21 12h-2.6M5.6 12H3M18.36 5.64l-1.85 1.85M7.49 16.51l-1.85 1.85M18.36 18.36l-1.85-1.85M7.49 7.49L5.64 5.64"/></svg>`,
+  store:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 8h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>`,
+  edit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4L15.5 5.5l3 3L8.5 19 4 20z"/><path d="M13.5 7l3 3"/></svg>`,
+  web:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.6 2.3 2.6 15.7 0 17M12 3.5c-2.6 2.3-2.6 15.7 0 17"/></svg>`,
+  calc:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><rect x="7.5" y="5.5" width="9" height="4" rx="0.6"/><circle cx="8" cy="13.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="13.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="13.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="8" cy="17.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="17.2" r="0.9" fill="currentColor" stroke="none"/></svg>`,
+  image:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg>`,
+  music:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>`,
+  mail:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/></svg>`,
+  chat:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5z"/></svg>`,
+};
+function icon(name,cls){ return `<span class="${cls||'icon'}">${ICONS[name]||''}</span>`; }
+
+/* ===================== ICON PACKS (app icons only) ===================== */
+const APP_ICON_THEMES = {
+  default:{ monitor:ICONS.monitor, terminal:ICONS.terminal, folder:ICONS.folder, gear:ICONS.gear, store:ICONS.store, edit:ICONS.edit, web:ICONS.web, calc:ICONS.calc },
+  solid:{
+    monitor:`<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5" fill="currentColor"/><rect x="8" y="18" width="8" height="2" rx="1" fill="currentColor"/></svg>`,
+    terminal:`<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="currentColor"/><path d="M7 10l2.5 2L7 14M13 15h4" stroke="#0c0d12" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+    folder:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v10A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5v-12z"/></svg>`,
+    gear:`<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4" fill="#0c0d12"/></svg>`,
+    store:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 8h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>`,
+    edit:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 20l1-4L15.5 5.5l3 3L8.5 19 4 20z"/></svg>`,
+    web:`<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 2.6 15.7 0 17M12 3.5c-2.6 2.3-2.6 15.7 0 17" stroke="#0c0d12" stroke-width="1.2" fill="none"/></svg>`,
+    calc:`<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="14" height="18" rx="2"/><rect x="7.5" y="5.5" width="9" height="4" rx="0.6" fill="#0c0d12"/><circle cx="8" cy="13.2" r="0.9" fill="#0c0d12"/><circle cx="12" cy="13.2" r="0.9" fill="#0c0d12"/><circle cx="16" cy="13.2" r="0.9" fill="#0c0d12"/><circle cx="8" cy="17.2" r="0.9" fill="#0c0d12"/><circle cx="12" cy="17.2" r="0.9" fill="#0c0d12"/><circle cx="16" cy="17.2" r="0.9" fill="#0c0d12"/></svg>`,
+  }
+};
+function appIcon(name){ return (APP_ICON_THEMES[state.iconTheme]||APP_ICON_THEMES.default)[name] || ICONS[name] || ''; }
+function appIconPreview(theme){ return `<span style="width:22px;height:22px;display:inline-block;color:var(--fg)">${(APP_ICON_THEMES[theme]||APP_ICON_THEMES.default).folder}</span>`; }
+
+/* ===================== STATE ===================== */
+const state = {
+  ws: 1,
+  focused: 'terminal',
+  openApps: ['monitor','terminal','files'],
+  theme: 'dark',
+  accent: '#5fb0ff',
+  wallpaper: 'nebula',
+  customWallpaper: null,
+  iconTheme: 'default',
+  panelSize: 'medium',
+  panelTransparent: true,
+  fs: null,
+  cwd: ['home','mike'],
+  history: [],
+  histIdx: -1,
+  pkgs: {
+    firefox:{v:'145.0.2-1',size:'58.4 MiB',installed:false},
+    chromium:{v:'129.0.6668',size:'112 MiB',installed:false},
+    vlc:{v:'3.0.21-4',size:'44.1 MiB',installed:false},
+    git:{v:'2.47.0-1',size:'12.3 MiB',installed:true},
+    htop:{v:'3.3.0-1',size:'220 KiB',installed:true},
+    neofetch:{v:'7.1.0-9',size:'112 KiB',installed:true},
+    vim:{v:'9.1.0697-1',size:'3.7 MiB',installed:true},
+    nano:{v:'8.0-1',size:'820 KiB',installed:true},
+    curl:{v:'8.10.1-1',size:'890 KiB',installed:true},
+    'gnome-terminal':{v:'3.54.0-1',size:'2.1 MiB',installed:true},
+    nautilus:{v:'47.2-1',size:'6.4 MiB',installed:true},
+    'gnome-control-center':{v:'47.2-1',size:'9.8 MiB',installed:true},
+    gimp:{v:'2.10.38-2',size:'238 MiB',installed:false, app:'imageeditor'},
+    spotify:{v:'1.2.63.478',size:'188 MiB',installed:false, app:'musicplayer'},
+    thunderbird:{v:'128.3.1-1',size:'92.6 MiB',installed:false, app:'mail'},
+    discord:{v:'0.0.90-1',size:'118 MiB',installed:false, app:'chat'},
+    code:{v:'1.94.2-1',size:'308 MiB',installed:false},
+    'libreoffice-fresh':{v:'24.8.2-1',size:'612 MiB',installed:false},
+    blender:{v:'4.2.3-1',size:'451 MiB',installed:false},
+    'obs-studio':{v:'31.0.0-2',size:'156 MiB',installed:false},
+    steam:{v:'1.0.0.81-1',size:'3.9 MiB',installed:false},
+    inkscape:{v:'1.3.2-3',size:'98.7 MiB',installed:false},
+  }
+};
+
+/* ===================== WALLPAPERS ===================== */
+const WALLPAPERS = {
+  nebula:'radial-gradient(circle at 15% 20%,#3a1030 0%,transparent 45%),radial-gradient(circle at 85% 15%,#0d1f3d 0%,transparent 50%),radial-gradient(circle at 60% 90%,#2a0f18 0%,transparent 55%),linear-gradient(135deg,#0a0b10,#120e18 60%,#0a0e16)',
+  ocean:'radial-gradient(circle at 20% 80%,#062a3d 0%,transparent 55%),radial-gradient(circle at 80% 20%,#013a4a 0%,transparent 50%),linear-gradient(160deg,#02050a,#04222e 60%,#021b24)',
+  sunset:'radial-gradient(circle at 30% 70%,#4a1620 0%,transparent 50%),radial-gradient(circle at 75% 25%,#5c2a12 0%,transparent 55%),linear-gradient(150deg,#120604,#391608 55%,#1a0805)',
+  forest:'radial-gradient(circle at 25% 25%,#0f3a24 0%,transparent 50%),radial-gradient(circle at 80% 75%,#123018 0%,transparent 55%),linear-gradient(140deg,#050a06,#0e1f12 60%,#060f08)',
+  mono:'linear-gradient(160deg,#0a0a0c,#161619 60%,#0c0c0e)',
+};
+function applyWallpaper(){
+  const el = document.getElementById('desktop');
+  if(state.wallpaper==='custom' && state.customWallpaper){
+    el.style.backgroundImage = `url(${state.customWallpaper})`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+  } else {
+    el.style.backgroundImage = WALLPAPERS[state.wallpaper]||WALLPAPERS.nebula;
+    el.style.backgroundSize = '';
+    el.style.backgroundPosition = '';
+  }
+}
+function applyPanelSize(){
+  const map={small:28,medium:34,large:44};
+  document.documentElement.style.setProperty('--panel-h', (map[state.panelSize]||34)+'px');
+}
+function applyPanelTransparency(){
+  document.getElementById('panel').classList.toggle('opaque', !state.panelTransparent);
+}
+function applyIconTheme(){
+  document.querySelectorAll('.icon-slot').forEach(s=>{ s.innerHTML = appIcon(s.dataset.icon); });
+  renderAppsGrid();
+}
+
+function loadPersist(){
+  try{
+    const raw = localStorage.getItem('papervm-state');
+    if(raw){
+      const d = JSON.parse(raw);
+      if(d.fs) state.fs = d.fs;
+      if(d.pkgs) state.pkgs = d.pkgs;
+      if(d.theme) state.theme = d.theme;
+      if(d.accent) state.accent = d.accent;
+      if(d.wallpaper) state.wallpaper = d.wallpaper;
+      if(d.customWallpaper) state.customWallpaper = d.customWallpaper;
+      if(d.iconTheme) state.iconTheme = d.iconTheme;
+      if(d.panelSize) state.panelSize = d.panelSize;
+      if(typeof d.panelTransparent==='boolean') state.panelTransparent = d.panelTransparent;
+    }
+  }catch(e){}
+  document.body.classList.toggle('light', state.theme==='light');
+  document.documentElement.style.setProperty('--accent', state.accent);
+}
+function savePersist(){
+  try{ localStorage.setItem('papervm-state', JSON.stringify({fs:state.fs, pkgs:state.pkgs, theme:state.theme, accent:state.accent, wallpaper:state.wallpaper, customWallpaper:state.customWallpaper, iconTheme:state.iconTheme, panelSize:state.panelSize, panelTransparent:state.panelTransparent})); }catch(e){ toast('Fotoğraf çok büyük, kaydedilemedi'); }
+}
+
+function defaultFS(){
+  const mkdir = () => ({type:'dir', children:{}});
+  const home = mkdir();
+  ['Desktop','Documents','Downloads','Music','Pictures','Videos','Public','Templates'].forEach(n=>{
+    home.children[n]=mkdir();
+  });
+  home.children['Pictures'].children['wallpaper.png']={type:'file',size:'1.2M',content:''};
+  return {type:'dir', children:{ home:{type:'dir',children:{mike:home}}, etc:mkdir(), usr:mkdir(), var:mkdir(), tmp:mkdir() }};
+}
+
+/* ===================== FS HELPERS ===================== */
+function resolvePath(path){ // path: array of segments from root
+  let node = state.fs;
+  for(const seg of path){
+    if(!node.children || !node.children[seg]) return null;
+    node = node.children[seg];
+  }
+  return node;
+}
+function pathStr(path){ return '/'+path.join('/'); }
+function displayCwd(){
+  const p = state.cwd;
+  if(p[0]==='home' && p[1]==='mike') return '~'+p.slice(2).map(s=>'/'+s).join('');
+  return '/'+p.join('/');
+}
+
+/* ===================== TOAST ===================== */
+function toast(msg){
+  const el = document.createElement('div');
+  el.className='toast'; el.textContent=msg;
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(()=>el.remove(), 4000);
+}
+
+/* ===================== TERMINAL ===================== */
+const termBody = ()=>document.getElementById('body-terminal');
+function termPrint(html){
+  const d=document.createElement('div'); d.innerHTML=html;
+  termBody().insertBefore(d, termBody().lastElementChild);
+  termBody().scrollTop = termBody().scrollHeight;
+}
+function promptHTML(){
+  return `<span class="prompt">mike@archlinux</span> <span class="path">${displayCwd()}</span> $ `;
+}
+function termCommand(raw){
+  const line = raw.trim();
+  termPrint(`<div>${promptHTML()}${escapeHtml(raw)}</div>`);
+  if(!line) return;
+  state.history.push(line); state.histIdx = state.history.length;
+  const parts = line.split(/\s+/);
+  let cmd = parts[0]; const args = parts.slice(1);
+  if(cmd==='sudo'){ cmd = args.shift(); }
+  const fn = COMMANDS[cmd];
+  if(fn){ try{ fn(args); }catch(e){ termPrint(`<div class="err">papervm: error: ${e.message}</div>`); } }
+  else termPrint(`<div class="err">bash: ${escapeHtml(cmd)}: command not found</div>`);
+  savePersist();
+}
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function currentDirNode(){ return resolvePath(state.cwd); }
+
+const COMMANDS = {
+  help(){ termPrint(`<div class="dim">Commands: help clear pwd ls cd mkdir touch cat rm echo whoami hostname uname date uptime free df ps neofetch fastfetch pacman history</div>`); },
+  clear(){ termBody().innerHTML=''; renderPromptLine(); },
+  pwd(){ termPrint(`<div>${pathStr(state.cwd)}</div>`); },
+  whoami(){ termPrint(`<div>mike</div>`); },
+  hostname(){ termPrint(`<div>archlinux</div>`); },
+  uname(args){ termPrint(`<div>${args.includes('-a')?'Linux archlinux 6.11.3-arch1-1 x86_64 GNU/Linux':'Linux'}</div>`); },
+  date(){ termPrint(`<div>${new Date().toString()}</div>`); },
+  uptime(){ termPrint(`<div>up 8:29, 1 user, load average: 0.34, 0.29, 0.22</div>`); },
+  free(){ termPrint(`<div>              total        used        free\nMem:       15113000     6320000     4980000\nSwap:       4194300           0     4194300</div>`); },
+  df(){ termPrint(`<div>Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p2  475G  8.0G  442G   2% /</div>`); },
+  ps(){ termPrint(`<div>  PID TTY   TIME CMD\n 1381 tty1 00:00 gnome-shell\n 2377 tty1 00:12 firefox\n 3874 tty1 00:00 bash</div>`); },
+  history(){ termPrint(`<div>${state.history.map((h,i)=>`${i+1}  ${escapeHtml(h)}`).join('\n')}</div>`); },
+  echo(args){ termPrint(`<div>${escapeHtml(args.join(' '))}</div>`); },
+  which(args){ termPrint(`<div>/usr/bin/${args[0]||''}</div>`); },
+  ping(args){ const h=args[0]||'archlinux.org'; termPrint(`<div>PING ${h} 56(84) bytes of data.\n64 bytes from ${h}: icmp_seq=1 ttl=54 time=23.4 ms\n64 bytes from ${h}: icmp_seq=2 ttl=54 time=21.9 ms\n^C</div>`); },
+  ls(args){
+    const node = currentDirNode();
+    if(!node || node.type!=='dir'){ termPrint(`<div class="err">ls: cannot access</div>`); return; }
+    const long = args.includes('-la')||args.includes('-l')||args.includes('-a');
+    const names = Object.keys(node.children);
+    if(!names.length){ return; }
+    if(long){
+      termPrint('<div>'+names.map(n=>{
+        const c=node.children[n];
+        return `${c.type==='dir'?'drwxr-xr-x':'-rw-r--r--'}  mike mike  ${c.size||'4.0K'}  ${n}${c.type==='dir'?'/':''}`;
+      }).join('\n')+'</div>');
+    } else {
+      termPrint(`<div>${names.map(n=>node.children[n].type==='dir'?n+'/':n).join('  ')}</div>`);
+    }
+  },
+  cd(args){
+    const target = args[0];
+    if(!target || target==='~'){ state.cwd=['home','mike']; return; }
+    if(target==='..'){ if(state.cwd.length>0) state.cwd.pop(); return; }
+    const next = [...state.cwd, target];
+    const node = resolvePath(next);
+    if(node && node.type==='dir'){ state.cwd = next; }
+    else termPrint(`<div class="err">bash: cd: ${escapeHtml(target)}: No such file or directory</div>`);
+  },
+  mkdir(args){
+    if(!args[0]){ termPrint(`<div class="err">mkdir: missing operand</div>`); return; }
+    const node = currentDirNode();
+    node.children[args[0]] = {type:'dir', children:{}};
+    refreshFilesIfOpen();
+  },
+  touch(args){
+    if(!args[0]){ termPrint(`<div class="err">touch: missing operand</div>`); return; }
+    const node = currentDirNode();
+    if(!node.children[args[0]]) node.children[args[0]] = {type:'file', size:'0', content:''};
+    refreshFilesIfOpen();
+  },
+  cat(args){
+    const node = currentDirNode();
+    const f = node.children[args[0]];
+    if(!f){ termPrint(`<div class="err">cat: ${escapeHtml(args[0]||'')}: No such file or directory</div>`); return; }
+    if(f.type==='dir'){ termPrint(`<div class="err">cat: ${escapeHtml(args[0])}: Is a directory</div>`); return; }
+    termPrint(`<div>${escapeHtml(f.content||'')}</div>`);
+  },
+  rm(args){
+    const node = currentDirNode();
+    if(!args[0] || !node.children[args[0]]){ termPrint(`<div class="err">rm: cannot remove '${escapeHtml(args[0]||'')}': No such file or directory</div>`); return; }
+    delete node.children[args[0]];
+    refreshFilesIfOpen();
+  },
+  neofetch(){ COMMANDS.fastfetch(); },
+  fastfetch(){ termPrint(fastfetchHTML()); },
+  pacman(args){
+    const flag = args[0];
+    if(flag==='-Q'){
+      const inst = Object.entries(state.pkgs).filter(([,p])=>p.installed);
+      termPrint(`<div>${inst.map(([n,p])=>`${n} ${p.v}`).join('\n')}</div>`);
+      return;
+    }
+    if(flag==='-Qi'){
+      const p = state.pkgs[args[1]];
+      if(!p||!p.installed){ termPrint(`<div class="err">error: package '${escapeHtml(args[1]||'')}' was not found</div>`); return; }
+      termPrint(`<div>Name : ${args[1]}\nVersion : ${p.v}\nInstalled Size : ${p.size}</div>`); return;
+    }
+    if(flag==='-Ss'||flag==='-Qs'){
+      const q = args[1]||'';
+      const matches = Object.entries(state.pkgs).filter(([n])=>n.includes(q));
+      termPrint(`<div>${matches.map(([n,p])=>`local/${n} ${p.v}${p.installed?' [installed]':''}`).join('\n')||'no results'}</div>`); return;
+    }
+    if(flag==='-Syu'||flag==='-Su'||flag==='-Sy'){
+      termPrint(`<div>:: Synchronizing package databases...\n core is up to date\n extra is up to date\n:: Starting full system upgrade...\n there is nothing to do</div>`); return;
+    }
+    if(flag==='-R'||flag==='-Rns'){
+      const p = state.pkgs[args[1]];
+      if(!p||!p.installed){ termPrint(`<div class="err">error: target not found: ${escapeHtml(args[1]||'')}</div>`); return; }
+      p.installed=false;
+      termPrint(`<div>checking dependencies...\n(1/1) removing ${args[1]}...</div>`);
+      toast(`${args[1]} removed`); savePersist(); renderAppsGrid(); return;
+    }
+    if(flag==='-S'){
+      const name = args[1];
+      const p = state.pkgs[name];
+      if(!p){ termPrint(`<div class="err">error: target not found: ${escapeHtml(name||'')}</div>`); return; }
+      if(p.installed){ termPrint(`<div class="dim">warning: ${name}-${p.v} is up to date -- reinstalling</div>`); }
+      termPrint(`<div>resolving dependencies...\nlooking for conflicting packages...\n\nPackages (1) ${name}-${p.v}\n\nTotal Download Size:   ${p.size}\nTotal Installed Size:  ${p.size}\n\n:: Proceed with installation? [Y/n] y\n:: Retrieving packages...\n ${name}-${p.v}.pkg.tar.zst   [####################] 100%\n:: Processing package changes...\n(1/1) installing ${name}...\n:: Running post-transaction hooks...\n(1/1) Updating desktop database...</div>`);
+      p.installed = true;
+      toast(`${name} installed successfully`);
+      savePersist(); renderAppsGrid();
+      return;
+    }
+    termPrint(`<div class="dim">usage: pacman {-S|-Ss|-Q|-Qi|-Qs|-R|-Rns|-Syu} [package]</div>`);
+  },
+  man(args){ termPrint(`<div class="dim">No manual entry for ${escapeHtml(args[0]||'')} (try 'help')</div>`); },
+};
+
+function fastfetchHTML(){
+  const inst = Object.values(state.pkgs).filter(p=>p.installed).length;
+  return `<div class="arch-logo">                 -\`
+                .o+\`
+               \`ooo/
+              \`+oooo:
+             \`+oooooo:
+             -+oooooo+:
+           \`/:-:++oooo+:
+          \`/++++/+++++++:
+         \`/++++++++++++++:
+        \`/+++ooooooooooooo/\`
+       ./ooosssso++osssssso+\`
+      .oossssso-\`\`\`\`/ossssss+\`
+     -osssssso.      :ssssssso.
+    :osssssss/        osssso+++.
+   /ossssssss/        +ssssooo/-
+ \`/ossssso+/:-        -:/+osssso+-
+\`+sso+:-\`                 \`.-/+oso:
+\`++:.                           \`-/+/
+.\`                                 \`/
+</div><div><b>mike@archlinux</b>
+-----------------
+OS: Arch Linux x86_64
+Host: PaperVM Virtual Machine
+Kernel: 6.11.3-arch1-1
+Uptime: 8 hours, 29 mins
+Packages: ${inst} (pacman)
+Shell: bash 5.2
+DE: GNOME 47.2
+WM: PaperVM
+CPU: AMD Ryzen 7 7730U
+GPU: AMD Radeon Graphics
+Memory: 6.17 GiB / 14.4 GiB
+Disk (/): 8.01 GiB / 475.94 GiB (2%)</div>`;
+}
+
+function renderPromptLine(){
+  const wrap = document.createElement('div');
+  wrap.className='term-line-input';
+  wrap.innerHTML = `<span>${promptHTML()}</span><input class="term-input" id="termInput" autocomplete="off" spellcheck="false">`;
+  termBody().appendChild(wrap);
+  const input = wrap.querySelector('input');
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){
+      const v = input.value; input.value='';
+      termCommand(v);
+      focusTermInput();
+    } else if(e.key==='ArrowUp'){
+      if(state.histIdx>0){ state.histIdx--; input.value=state.history[state.histIdx]||''; }
+      e.preventDefault();
+    } else if(e.key==='ArrowDown'){
+      if(state.histIdx<state.history.length-1){ state.histIdx++; input.value=state.history[state.histIdx]||''; }
+      else { state.histIdx=state.history.length; input.value=''; }
+      e.preventDefault();
+    } else if(e.key==='l' && e.ctrlKey){ e.preventDefault(); COMMANDS.clear(); }
+  });
+}
+function focusTermInput(){ const i=document.getElementById('termInput'); if(i) i.focus(); }
+
+/* ===================== FILES APP ===================== */
+const SIDE_FOLDERS = ['Home','Documents','Downloads','Music','Pictures','Videos','Trash'];
+let filesCwd = ['home','mike'];
+function renderFilesSide(){
+  const side = document.getElementById('filesSide');
+  side.innerHTML = SIDE_FOLDERS.map(n=>`<div data-f="${n}" class="${filesLabel()===n?'active':''}">${n}</div>`).join('');
+  side.querySelectorAll('div').forEach(el=>el.addEventListener('click', ()=>{
+    const n = el.dataset.f;
+    filesCwd = n==='Home' || n==='Trash' ? ['home','mike'] : ['home','mike',n];
+    renderFiles();
+  }));
+}
+function filesLabel(){
+  if(filesCwd.length===2) return 'Home';
+  return filesCwd[filesCwd.length-1];
+}
+function renderFiles(){
+  renderFilesSide();
+  const node = resolvePath(filesCwd) || resolvePath(['home','mike']);
+  const body = document.getElementById('filesBody');
+  const names = Object.keys(node.children||{});
+  body.innerHTML = names.length ? names.map(n=>{
+    const c = node.children[n];
+    return `<tr><td class="fname">${icon(c.type==='dir'?'folder':'file','icon-sm')}${n}</td><td>${c.type==='dir'?'—':(c.size||'0 B')}</td><td>Today</td></tr>`;
+  }).join('') : `<tr><td colspan="3" style="color:var(--fg-dim)">This folder is empty</td></tr>`;
+}
+function refreshFilesIfOpen(){
+  savePersist();
+  if(document.getElementById('win-files').style.display!=='none') renderFiles();
+  if(typeof renderEditorOpenList==='function') renderEditorOpenList();
+}
+
+/* ===================== SYSTEM MONITOR ===================== */
+function renderMonitor(){
+  const cpuPct = () => Math.floor(Math.random()*30)+2;
+  const cores = Array.from({length:8},(_,i)=>({n:i, v:cpuPct()}));
+  const ram = 43 + Math.floor(Math.random()*4)-2;
+  document.getElementById('body-monitor').innerHTML = `
+  <div class="mon-sec"><h4>CPU — Ryzen 7 7730U</h4>
+    ${cores.map(c=>`<div class="core-row"><b>C${c.n}</b><span style="flex:1;margin:0 8px;"><span class="bar" style="display:inline-block;width:100%;vertical-align:middle;"><i style="width:${c.v}%"></i></span></span>${c.v}%</div>`).join('')}
+  </div>
+  <div class="mon-sec"><h4>MEM / SWAP</h4>
+    <div>Used ${ram}% of 14.4 GiB</div><div class="bar"><i style="width:${ram}%;background:var(--yellow)"></i></div>
+    <div style="margin-top:6px">Swap 0% of 4.0 GiB</div><div class="bar"><i style="width:0%"></i></div>
+  </div>
+  <div class="mon-sec"><h4>PROCESSES</h4>
+    <table class="proc"><thead><tr><th>PID</th><th>USER</th><th>CPU%</th><th>MEM</th><th>COMMAND</th></tr></thead>
+    <tbody>
+      <tr><td class="p">1381</td><td>mike</td><td>1.0</td><td>546M</td><td class="p">gnome-shell</td></tr>
+      <tr><td class="p">2377</td><td>mike</td><td>0.3</td><td>773M</td><td class="p">firefox</td></tr>
+      <tr><td class="p">3874</td><td>mike</td><td>0.0</td><td>93M</td><td class="p">bash</td></tr>
+      <tr><td class="p">56099</td><td>mike</td><td>0.0</td><td>8.3M</td><td class="p">btop</td></tr>
+      <tr><td class="p">72921</td><td>mike</td><td>0.0</td><td>78M</td><td class="p">gnome-console</td></tr>
+    </tbody></table>
+  </div>`;
+}
+
+/* ===================== SETTINGS ===================== */
+let settingsSection = 'appearance';
+const SETTINGS_SECTIONS = [
+  {id:'appearance', label:'Appearance'},
+  {id:'panel', label:'Panel'},
+  {id:'network', label:'Network'},
+  {id:'power', label:'Power'},
+  {id:'about', label:'About'},
+];
+const ACCENTS = ['#5fb0ff','#3584e4','#e01b24','#2ec27e','#f5c211','#9141ac'];
+const SETTINGS_PANELS = {
+  appearance(){
+    return `<h3>Appearance</h3>
+    <div class="settings-row"><span>Style</span><div class="theme-opt">
+      <div class="theme-card ${state.theme!=='light'?'active':''}" data-theme="dark" style="background:#151621"></div>
+      <div class="theme-card ${state.theme==='light'?'active':''}" data-theme="light" style="background:#e7e7ea"></div>
+    </div></div>
+    <div class="settings-row"><span>Accent Color</span><div class="swatches">
+      ${ACCENTS.map(c=>`<div class="swatch ${state.accent===c?'active':''}" data-accent="${c}" style="background:${c}"></div>`).join('')}
+    </div></div>
+    <div class="settings-row"><span>Wallpaper</span><div class="theme-opt">
+      ${Object.keys(WALLPAPERS).map(k=>`<div class="theme-card ${state.wallpaper===k?'active':''}" data-wallpaper="${k}" style="background:${WALLPAPERS[k]}" title="${k}"></div>`).join('')}
+    </div></div>
+    <div class="settings-row"><span>Custom Photo</span><div class="theme-opt">
+      ${state.customWallpaper ? `<div class="theme-card ${state.wallpaper==='custom'?'active':''}" data-wallpaper="custom" style="background-image:url(${state.customWallpaper});background-size:cover;background-position:center;" title="Fotoğrafın"></div>` : ''}
+      <div class="theme-card" data-wallpaper-upload="1" style="display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--fg-dim);">+</div>
+    </div></div>
+    <div class="settings-row"><span>Icon Pack</span><div class="theme-opt">
+      <div class="theme-card ${state.iconTheme!=='solid'?'active':''}" data-icontheme="default" style="display:flex;align-items:center;justify-content:center;">${appIconPreview('default')}</div>
+      <div class="theme-card ${state.iconTheme==='solid'?'active':''}" data-icontheme="solid" style="display:flex;align-items:center;justify-content:center;">${appIconPreview('solid')}</div>
+    </div></div>
+    <div class="settings-row"><span>Animations</span><span class="dim">On</span></div>`;
+  },
+  panel(){
+    const sizes=[['small','Small',24],['medium','Medium',32],['large','Large',40]];
+    return `<h3>Panel</h3>
+    <div class="settings-row"><span>Size</span><div class="theme-opt">
+      ${sizes.map(([id,label,h])=>`<div class="theme-card ${state.panelSize===id?'active':''}" data-panelsize="${id}" style="width:60px;height:44px;display:flex;align-items:center;justify-content:center;" title="${label}"><span style="width:36px;height:${h/3}px;background:var(--fg-dim);border-radius:2px;"></span></div>`).join('')}
+    </div></div>
+    <div class="settings-row"><span>Transparency</span><div class="theme-opt">
+      <div class="theme-card ${state.panelTransparent?'active':''}" data-paneltrans="1" style="background:rgba(127,127,127,.3)" title="Şeffaf"></div>
+      <div class="theme-card ${!state.panelTransparent?'active':''}" data-paneltrans="0" style="background:var(--bg1)" title="Opak"></div>
+    </div></div>`;
+  },
+  network(){ return `<h3>Wi-Fi</h3>
+    <div class="settings-row"><span>PaperVM-5G</span><span style="color:var(--green)">Connected</span></div>
+    <div class="settings-row"><span>IP Address</span><span class="dim">192.168.1.42</span></div>
+    <div class="settings-row"><span>Link Speed</span><span class="dim">866 Mb/s</span></div>`;
+  },
+  power(){ return `<h3>Power</h3>
+    <div class="settings-row"><span>Battery</span><span class="dim" id="settingsBat">${document.getElementById('pBat')?document.getElementById('pBat').textContent:'79%'}</span></div>
+    <div class="settings-row"><span>Power Mode</span><span class="dim">Balanced</span></div>
+    <div class="settings-row"><span>Screen Blank</span><span class="dim">5 minutes</span></div>`;
+  },
+  about(){ return `<h3>About This System</h3>
+    <div class="settings-row"><span>Device Name</span><span class="dim">archlinux</span></div>
+    <div class="settings-row"><span>Hardware</span><span class="dim">AMD Ryzen 7 7730U · 14.4 GiB</span></div>
+    <div class="settings-row"><span>OS Name</span><span class="dim">Arch Linux</span></div>
+    <div class="settings-row"><span>Windowing System</span><span class="dim">PaperVM (Wayland)</span></div>
+    <div class="settings-row"><span>Disk Capacity</span><span class="dim">475.9 GB</span></div>`;
+  }
+};
+function renderSettings(){
+  document.getElementById('settingsSide').innerHTML = SETTINGS_SECTIONS.map(s=>
+    `<div data-sec="${s.id}" class="${settingsSection===s.id?'active':''}">${s.label}</div>`).join('');
+  document.getElementById('settingsMain').innerHTML = SETTINGS_PANELS[settingsSection]();
+}
+
+/* ===================== SOFTWARE (GNOME Software, linked to pacman) ===================== */
+function renderSoftware(){
+  document.getElementById('softwareGrid').innerHTML = Object.entries(state.pkgs).map(([name,p])=>`
+    <div class="store-card">
+      <div class="name">${name}</div>
+      <div class="desc">v${p.v} · ${p.size}</div>
+      <button data-store-toggle="${name}" class="${p.installed?'installed':''}">${p.installed?'Installed':'Install'}</button>
+    </div>`).join('');
+}
+
+/* ===================== CALCULATOR ===================== */
+let calcCur='0', calcPrev=null, calcOp=null, calcReset=false;
+function calcUpdate(){ const d=document.getElementById('calcDisplay'); if(d) d.textContent=calcCur; }
+function calcCompute(){
+  if(calcOp===null||calcPrev===null) return;
+  const b=parseFloat(calcCur); let r=calcPrev;
+  if(calcOp==='+') r=calcPrev+b; else if(calcOp==='-') r=calcPrev-b;
+  else if(calcOp==='×') r=calcPrev*b; else if(calcOp==='÷') r=(b===0?NaN:calcPrev/b);
+  calcCur=String(Math.round(r*1e8)/1e8); calcPrev=null; calcReset=true; calcUpdate();
+}
+function calcPress(v){
+  if(v==='AC'){ calcCur='0'; calcPrev=null; calcOp=null; calcUpdate(); return; }
+  if(v==='%'){ calcCur=String(parseFloat(calcCur)/100); calcUpdate(); return; }
+  if(v==='+'||v==='-'||v==='×'||v==='÷'){
+    if(calcOp && !calcReset) calcCompute();
+    calcPrev=parseFloat(calcCur); calcOp=v; calcReset=true; return;
+  }
+  if(v==='='){ calcCompute(); calcOp=null; return; }
+  if(v==='.'){ if(calcReset){ calcCur='0.'; calcReset=false; } else if(!calcCur.includes('.')) calcCur+='.'; calcUpdate(); return; }
+  if(calcReset || calcCur==='0'){ calcCur=v; calcReset=false; } else { calcCur+=v; }
+  calcUpdate();
+}
+
+/* ===================== TEXT EDITOR ===================== */
+let editorFile = null;
+function editorFileList(){
+  const home = resolvePath(['home','mike']);
+  return Object.entries(home.children||{}).filter(([,c])=>c.type==='file').map(([n])=>n);
+}
+function renderEditorOpenList(){
+  const sel = document.getElementById('editorOpenList');
+  if(!sel) return;
+  sel.innerHTML = `<option value="">Open file…</option>`+editorFileList().map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+function editorLoad(name){
+  const home = resolvePath(['home','mike']);
+  const f = home.children[name];
+  if(f && f.type==='file'){
+    editorFile = name;
+    document.getElementById('editorTextarea').value = f.content||'';
+    document.getElementById('editorTitle').textContent = name;
+    document.getElementById('editorNameInput').style.display='none';
+  }
+}
+function editorNew(){
+  editorFile=null;
+  document.getElementById('editorTextarea').value='';
+  document.getElementById('editorTitle').textContent='Untitled';
+  document.getElementById('editorNameInput').style.display='inline-block';
+  document.getElementById('editorNameInput').value='';
+  document.getElementById('editorOpenList').value='';
+}
+function editorSave(){
+  const text = document.getElementById('editorTextarea').value;
+  let name = editorFile;
+  if(!name){
+    name = document.getElementById('editorNameInput').value.trim();
+    if(!name){ toast('Enter a file name first'); return; }
+  }
+  const home = resolvePath(['home','mike']);
+  home.children[name] = {type:'file', size:new Blob([text]).size+' B', content:text};
+  editorFile = name;
+  document.getElementById('editorTitle').textContent = name;
+  document.getElementById('editorNameInput').style.display='none';
+  refreshFilesIfOpen();
+  toast(`${name} saved`);
+}
+
+/* ===================== WEB ===================== */
+let webHistory=['paper://home'], webIdx=0;
+const WEB_PAGES = {
+  'paper://home':()=>`<h2>PaperVM Web</h2><p>Bu, PaperVM içindeki basit bir tarayıcı simülasyonudur ve gerçek internete bağlanmaz.</p>
+    <p><a href="#" data-web-go="paper://packages">paper://packages</a> — yüklü paketler<br>
+    <a href="#" data-web-go="paper://about">paper://about</a> — sistem hakkında</p>`,
+  'paper://packages':()=>{
+    const rows = Object.entries(state.pkgs).filter(([,p])=>p.installed).map(([n,p])=>`<li>${n} — ${p.v}</li>`).join('');
+    return `<h2>Installed Packages</h2><ul>${rows||'<li class="dim">none</li>'}</ul>`;
+  },
+  'paper://about':()=>`<h2>About PaperVM</h2><p>PaperVM, GNOME Shell üzerinde çalışan, Hyprland tarzı tiling pencere yönetimine sahip bir masaüstü simülasyon konseptidir.</p>`,
+};
+function webRender(){
+  const url = webHistory[webIdx];
+  document.getElementById('webAddr').value = url;
+  const page = WEB_PAGES[url];
+  document.getElementById('webBody').innerHTML = page ? page() : `<h2>This page can't be reached</h2><p class="dim">${escapeHtml(url)} bulunamadı.</p>`;
+}
+function webGo(url){
+  webHistory = webHistory.slice(0, webIdx+1);
+  webHistory.push(url); webIdx = webHistory.length-1; webRender();
+}
+function webBack(){ if(webIdx>0){ webIdx--; webRender(); } }
+function webFwd(){ if(webIdx<webHistory.length-1){ webIdx++; webRender(); } }
+
+/* ===================== IMAGE EDITOR (gimp) ===================== */
+const IMG_COLORS=['#1c1e24','#ff6b6b','#f0d264','#6ee7a0','#5fb0ff','#9141ac'];
+let imgColor=IMG_COLORS[0], imgDrawing=false, imgCtx=null;
+function renderImgColors(){
+  document.getElementById('imgColors').innerHTML = IMG_COLORS.map(c=>`<div class="swatch ${imgColor===c?'active':''}" data-imgcolor="${c}" style="background:${c}"></div>`).join('');
+}
+function imgCanvasInit(){
+  const cv = document.getElementById('imgCanvas');
+  const resize = ()=>{ const r=cv.getBoundingClientRect(); if(r.width&&r.height){ cv.width=r.width; cv.height=r.height; } };
+  if(cv.dataset.inited){ resize(); return; }
+  cv.dataset.inited='1';
+  imgCtx = cv.getContext('2d');
+  resize();
+  window.addEventListener('resize', ()=>{ if(document.getElementById('win-imageeditor').classList.contains('open')) resize(); });
+  const pos = e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left, y:t.clientY-r.top}; };
+  const start = e=>{ imgDrawing=true; const p=pos(e); imgCtx.beginPath(); imgCtx.moveTo(p.x,p.y); e.preventDefault(); };
+  const move = e=>{ if(!imgDrawing) return; const p=pos(e); imgCtx.strokeStyle=imgColor; imgCtx.lineWidth=3; imgCtx.lineCap='round'; imgCtx.lineTo(p.x,p.y); imgCtx.stroke(); e.preventDefault(); };
+  const end = ()=>{ imgDrawing=false; };
+  cv.addEventListener('mousedown', start); cv.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+  cv.addEventListener('touchstart', start, {passive:false}); cv.addEventListener('touchmove', move, {passive:false}); cv.addEventListener('touchend', end);
+}
+function imgClear(){ if(imgCtx) imgCtx.clearRect(0,0,imgCtx.canvas.width, imgCtx.canvas.height); }
+
+/* ===================== MUSIC PLAYER (spotify) ===================== */
+const SONGS=[{t:'Midnight Drive',a:'Nova Waves',d:222},{t:'Paper Skies',a:'Little Static',d:198},{t:'Analog Heart',a:'Kilo Bloom',d:245},{t:'Slow Recall',a:'Vertigo Fields',d:180}];
+let musicIdx=0, musicPlaying=false, musicElapsed=0, musicTimer=null;
+function fmtTime(s){ s=Math.floor(s); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function renderMusic(){
+  const body=document.getElementById('body-musicplayer'); if(!body) return;
+  const s=SONGS[musicIdx];
+  body.innerHTML = `
+    <div style="text-align:center;padding:10px 0;">
+      <div style="font-weight:600;font-size:15px;">${s.t}</div>
+      <div class="dim" style="font-size:12px;">${s.a}</div>
+    </div>
+    <div class="bar" style="height:5px;"><i style="width:${Math.min(100, musicElapsed/s.d*100)}%"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;" class="dim"><span>${fmtTime(musicElapsed)}</span><span>${fmtTime(s.d)}</span></div>
+    <div style="display:flex;justify-content:center;gap:16px;padding:10px 0;font-size:18px;">
+      <button class="flat" data-music="prev">⏮</button>
+      <button class="flat" data-music="toggle">${musicPlaying?'⏸':'▶'}</button>
+      <button class="flat" data-music="next">⏭</button>
+    </div>
+    <div style="border-top:1px solid var(--line);">
+      ${SONGS.map((song,i)=>`<div data-song="${i}" style="padding:7px 4px;cursor:pointer;display:flex;justify-content:space-between;font-size:12px;${i===musicIdx?'color:var(--accent)':''}"><span>${song.t}</span><span class="dim">${fmtTime(song.d)}</span></div>`).join('')}
+    </div>`;
+}
+function musicToggle(){
+  musicPlaying=!musicPlaying;
+  if(musicPlaying) musicTimer=setInterval(musicTick,1000); else clearInterval(musicTimer);
+  renderMusic();
+}
+function musicTick(){ musicElapsed++; if(musicElapsed>=SONGS[musicIdx].d) musicNext(); else renderMusic(); }
+function musicNext(){ musicIdx=(musicIdx+1)%SONGS.length; musicElapsed=0; renderMusic(); }
+function musicPrev(){ musicIdx=(musicIdx-1+SONGS.length)%SONGS.length; musicElapsed=0; renderMusic(); }
+function musicSelect(i){
+  musicIdx=i; musicElapsed=0;
+  if(musicPlaying){ clearInterval(musicTimer); musicTimer=setInterval(musicTick,1000); }
+  renderMusic();
+}
+
+/* ===================== MAIL (thunderbird) ===================== */
+const MAILS=[
+  {from:'GitHub',subj:'Security alert for your repository',body:'Bir bağımlılıkta güvenlik açığı tespit edildi, lütfen depo ayarlarını kontrol edin.',read:false},
+  {from:'Arch Linux',subj:'Weekly Newsletter #612',body:'Bu haftaki paket güncellemeleri ve topluluk haberleri burada.',read:false},
+  {from:'Steam',subj:'Sonbahar İndirimleri Başladı',body:'Kütüphanenizdeki bazı oyunlarda büyük indirimler var.',read:true},
+  {from:'Netlify',subj:'Deploy succeeded: papervm.app',body:'Son commit başarıyla canlıya alındı.',read:true},
+  {from:'Mike (kendine not)',subj:'Alışveriş listesi',body:'Süt, ekmek, kahve, RAM yükseltme kiti.',read:false},
+];
+let mailSel=0;
+function renderMailList(){
+  document.getElementById('mailList').innerHTML = MAILS.map((m,i)=>`<div data-mail="${i}" class="${i===mailSel?'active':''}" style="${m.read?'':'font-weight:600'}">${escapeHtml(m.from)}<br><span class="dim" style="font-weight:400;font-size:11px">${escapeHtml(m.subj)}</span></div>`).join('');
+}
+function renderMailReader(){
+  const m=MAILS[mailSel];
+  document.getElementById('mailReader').innerHTML = `<h3 style="margin-top:0">${escapeHtml(m.subj)}</h3><div class="dim" style="margin-bottom:10px">${escapeHtml(m.from)}</div><div>${escapeHtml(m.body)}</div>`;
+}
+function mailOpen(i){ mailSel=i; MAILS[i].read=true; renderMailList(); renderMailReader(); }
+
+/* ===================== CHAT (discord) ===================== */
+let CHAT_MSGS=[{who:'bot',text:"Selam! PaperVM Chat'e hoş geldin."}];
+const CHAT_REPLIES=['Anladım.','İlginç, devam et.','Bunu not aldım.','Haklı olabilirsin.','Başka bir şey var mı?'];
+function renderChat(){
+  const log=document.getElementById('chatLog'); if(!log) return;
+  log.innerHTML = CHAT_MSGS.map(m=>`<div style="margin:6px 0;text-align:${m.who==='me'?'right':'left'}"><span style="display:inline-block;background:${m.who==='me'?'var(--accent)':'rgba(127,127,127,.15)'};color:${m.who==='me'?'#04121f':'var(--fg)'};padding:6px 10px;border-radius:10px;max-width:75%;">${escapeHtml(m.text)}</span></div>`).join('');
+  log.scrollTop = log.scrollHeight;
+}
+function chatSend(){
+  const inp=document.getElementById('chatInput'); const v=inp.value.trim(); if(!v) return;
+  CHAT_MSGS.push({who:'me',text:v}); inp.value=''; renderChat();
+  setTimeout(()=>{ CHAT_MSGS.push({who:'bot',text:CHAT_REPLIES[Math.floor(Math.random()*CHAT_REPLIES.length)]}); renderChat(); }, 500+Math.random()*500);
+}
+
+/* ===================== WINDOW MGMT (animated tiling) ===================== */
+const APP_ORDER = ['monitor','terminal','files','software','settings','texteditor','web'];
+const FLOATING_APPS = ['calculator','imageeditor','musicplayer','mail','chat'];
+const APPS_ALL = [...APP_ORDER, ...FLOATING_APPS];
+const APP_META = {
+  monitor:{label:'System Monitor', icon:'monitor'},
+  terminal:{label:'Terminal', icon:'terminal'},
+  files:{label:'Files', icon:'folder'},
+  software:{label:'Software', icon:'store'},
+  settings:{label:'Settings', icon:'gear'},
+  texteditor:{label:'Text Editor', icon:'edit'},
+  web:{label:'Web', icon:'web'},
+  calculator:{label:'Calculator', icon:'calc'},
+  imageeditor:{label:'Image Editor', icon:'image', pkg:'gimp'},
+  musicplayer:{label:'Music Player', icon:'music', pkg:'spotify'},
+  mail:{label:'Mail', icon:'mail', pkg:'thunderbird'},
+  chat:{label:'Chat', icon:'chat', pkg:'discord'},
+};
+function refreshAppsGridIfNeeded(pkgName){
+  if(state.pkgs[pkgName] && state.pkgs[pkgName].app) renderAppsGrid();
+}
+const GAP = 1.4; // percent
+
+function layoutWindows(){
+  const open = APP_ORDER.filter(id=>state.openApps.includes(id));
+  const narrow = window.innerWidth < 760;
+  const rects = {};
+  const n = open.length;
+  if(n===0){ /* nothing open */ }
+  else if(n===1){
+    rects[open[0]] = {top:0,left:0,width:100,height:100};
+  } else if(narrow){
+    const h = (100-GAP*(n-1))/n;
+    open.forEach((id,i)=>{ rects[id] = {top:i*(h+GAP), left:0, width:100, height:h}; });
+  } else if(n===2){
+    const w = (100-GAP)/2;
+    rects[open[0]] = {top:0,left:0,width:w,height:100};
+    rects[open[1]] = {top:0,left:w+GAP,width:w,height:100};
+  } else if(n===3 && open.join(',')==='monitor,terminal,files'){ // master (left, full height) + two stacked on the right
+    const leftW = 45;
+    const rightW = 100-GAP-leftW;
+    const rightH = (100-GAP)/2;
+    rects[open[0]] = {top:0,left:0,width:leftW,height:100};
+    rects[open[1]] = {top:0,left:leftW+GAP,width:rightW,height:rightH};
+    rects[open[2]] = {top:rightH+GAP,left:leftW+GAP,width:rightW,height:rightH};
+  } else { // generic even grid for any other combination/count
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n/cols);
+    let idx = 0;
+    for(let r=0;r<rows;r++){
+      const itemsInRow = Math.min(cols, n-idx);
+      const h = (100-GAP*(rows-1))/rows;
+      const w = (100-GAP*(itemsInRow-1))/itemsInRow;
+      for(let c=0;c<itemsInRow;c++){
+        const id = open[idx++];
+        rects[id] = {top:r*(h+GAP), left:c*(w+GAP), width:w, height:h};
+      }
+    }
+  }
+  open.forEach(id=>{
+    const w = document.getElementById('win-'+id);
+    const r = rects[id];
+    w.style.top = `calc(${r.top}% + ${r.top===0?8:4}px)`;
+    w.style.left = `calc(${r.left}% + ${r.left===0?8:4}px)`;
+    w.style.width = `calc(${r.width}% - ${r.left===0||r.left+r.width>=100-0.01?12:8}px)`;
+    w.style.height = `calc(${r.height}% - ${r.top===0||r.top+r.height>=100-0.01?12:8}px)`;
+  });
+}
+
+function activateApp(id){
+  if(id==='settings') renderSettings();
+  else if(id==='software') renderSoftware();
+  else if(id==='texteditor'){ renderEditorOpenList(); }
+  else if(id==='web') webRender();
+  else if(id==='calculator') calcUpdate();
+  else if(id==='imageeditor'){ renderImgColors(); imgCanvasInit(); }
+  else if(id==='musicplayer') renderMusic();
+  else if(id==='mail'){ renderMailList(); renderMailReader(); }
+  else if(id==='chat') renderChat();
+}
+function openApp(id){
+  if(FLOATING_APPS.includes(id)){
+    document.getElementById('win-'+id).classList.add('open');
+    focusWin(id); closeOverview(); activateApp(id);
+    return;
+  }
+  const w = document.getElementById('win-'+id);
+  const wasOpen = state.openApps.includes(id);
+  if(!wasOpen){
+    state.openApps.push(id);
+    w.style.display = 'flex';
+    w.classList.remove('closing');
+    w.classList.add('opening');
+    setTimeout(()=>w.classList.remove('opening'), 200);
+  }
+  layoutWindows();
+  focusWin(id);
+  closeOverview();
+  activateApp(id);
+  if(id==='terminal') focusTermInput();
+}
+function closeApp(id){
+  if(FLOATING_APPS.includes(id)){
+    document.getElementById('win-'+id).classList.remove('open');
+    return;
+  }
+  const w = document.getElementById('win-'+id);
+  state.openApps = state.openApps.filter(a=>a!==id);
+  w.classList.add('closing');
+  layoutWindows();
+  setTimeout(()=>{ w.style.display='none'; w.classList.remove('closing'); }, 220);
+  if(state.focused===id && state.openApps.length) focusWin(state.openApps[0]);
+}
+function focusWin(app){
+  document.querySelectorAll('.win').forEach(w=>w.classList.remove('focused'));
+  const w = document.getElementById('win-'+app);
+  if(w) w.classList.add('focused');
+  state.focused = app;
+}
+
+function renderAppsGrid(){
+  const grid = document.getElementById('appsGrid');
+  const visible = APPS_ALL.filter(id=>{
+    const pkg = APP_META[id].pkg;
+    return !pkg || (state.pkgs[pkg] && state.pkgs[pkg].installed);
+  });
+  grid.innerHTML = visible.map(id=>
+    `<button data-launch="${id}">${appIcon(APP_META[id].icon)}<span>${APP_META[id].label}</span></button>`
+  ).join('');
+}
+function toggleOverview(){
+  document.getElementById('win-appsoverview').classList.toggle('open');
+}
+function closeOverview(){ document.getElementById('win-appsoverview').classList.remove('open'); }
+
+document.addEventListener('click', e=>{
+  if(e.target.dataset.launch){ openApp(e.target.dataset.launch); return; }
+  const launchBtn = e.target.closest('[data-launch]');
+  if(launchBtn){ openApp(launchBtn.dataset.launch); return; }
+  if(e.target.closest('[data-close]')){
+    const id = e.target.closest('[data-close]').dataset.close;
+    if(id==='appsoverview') closeOverview(); else closeApp(id);
+    return;
+  }
+  const sec = e.target.closest('[data-sec]');
+  if(sec){ settingsSection = sec.dataset.sec; renderSettings(); return; }
+  const themeCard = e.target.closest('[data-theme]');
+  if(themeCard){ state.theme = themeCard.dataset.theme; document.body.classList.toggle('light', state.theme==='light'); savePersist(); renderSettings(); return; }
+  const swatch = e.target.closest('[data-accent]');
+  if(swatch){ state.accent = swatch.dataset.accent; document.documentElement.style.setProperty('--accent', state.accent); savePersist(); renderSettings(); return; }
+  const wallpaperBtn = e.target.closest('[data-wallpaper]');
+  if(wallpaperBtn){ state.wallpaper = wallpaperBtn.dataset.wallpaper; applyWallpaper(); savePersist(); renderSettings(); return; }
+  const wallpaperUploadBtn = e.target.closest('[data-wallpaper-upload]');
+  if(wallpaperUploadBtn){ document.getElementById('wallpaperFileInput').click(); return; }
+  const iconThemeBtn = e.target.closest('[data-icontheme]');
+  if(iconThemeBtn){ state.iconTheme = iconThemeBtn.dataset.icontheme; applyIconTheme(); savePersist(); renderSettings(); return; }
+  const panelSizeBtn = e.target.closest('[data-panelsize]');
+  if(panelSizeBtn){ state.panelSize = panelSizeBtn.dataset.panelsize; applyPanelSize(); savePersist(); renderSettings(); return; }
+  const panelTransBtn = e.target.closest('[data-paneltrans]');
+  if(panelTransBtn){ state.panelTransparent = panelTransBtn.dataset.paneltrans==='1'; applyPanelTransparency(); savePersist(); renderSettings(); return; }
+  const storeBtn = e.target.closest('[data-store-toggle]');
+  if(storeBtn){
+    const name = storeBtn.dataset.storeToggle;
+    const p = state.pkgs[name];
+    p.installed = !p.installed;
+    toast(p.installed ? `${name} installed successfully` : `${name} removed`);
+    savePersist(); renderSoftware(); renderAppsGrid();
+    return;
+  }
+  const imgColorBtn = e.target.closest('[data-imgcolor]');
+  if(imgColorBtn){ imgColor = imgColorBtn.dataset.imgcolor; renderImgColors(); return; }
+  const imgEditBtn = e.target.closest('[data-imgedit]');
+  if(imgEditBtn){ if(imgEditBtn.dataset.imgedit==='clear') imgClear(); return; }
+  const musicBtn = e.target.closest('[data-music]');
+  if(musicBtn){
+    const a = musicBtn.dataset.music;
+    if(a==='toggle') musicToggle(); else if(a==='next') musicNext(); else if(a==='prev') musicPrev();
+    return;
+  }
+  const songRow = e.target.closest('[data-song]');
+  if(songRow){ musicSelect(parseInt(songRow.dataset.song)); return; }
+  const mailRow = e.target.closest('[data-mail]');
+  if(mailRow){ mailOpen(parseInt(mailRow.dataset.mail)); return; }
+  const chatSendBtn = e.target.closest('[data-chat]');
+  if(chatSendBtn){ chatSend(); return; }
+  const calcBtn = e.target.closest('[data-calc]');
+  if(calcBtn){ calcPress(calcBtn.dataset.calc); return; }
+  const editorBtn = e.target.closest('[data-editor]');
+  if(editorBtn){ if(editorBtn.dataset.editor==='new') editorNew(); else editorSave(); return; }
+  const webNav = e.target.closest('[data-web-nav]');
+  if(webNav){
+    const a = webNav.dataset.webNav;
+    if(a==='back') webBack(); else if(a==='fwd') webFwd(); else if(a==='reload') webRender(); else if(a==='home') webGo('paper://home');
+    return;
+  }
+  const webLink = e.target.closest('[data-web-go]');
+  if(webLink){ e.preventDefault(); webGo(webLink.dataset.webGo); return; }
+  const win = e.target.closest('.win');
+  if(win && win.id!=='win-appsoverview'){
+    focusWin(win.dataset.app);
+    if(win.dataset.app==='terminal') focusTermInput();
+  } else if(!e.target.closest('#panel') && !e.target.closest('#win-appsoverview')){
+    closeOverview();
+  }
+});
+document.addEventListener('change', e=>{
+  if(e.target.id==='editorOpenList' && e.target.value) editorLoad(e.target.value);
+  if(e.target.id==='wallpaperFileInput'){
+    const file = e.target.files[0];
+    e.target.value='';
+    if(!file) return;
+    if(!file.type.startsWith('image/')){ toast('Lütfen bir resim dosyası seç'); return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const dataUrl = reader.result;
+      if(dataUrl.length > 4000000){ toast('Fotoğraf çok büyük, daha küçük bir tane seç'); return; }
+      state.customWallpaper = dataUrl;
+      state.wallpaper = 'custom';
+      applyWallpaper();
+      savePersist();
+      renderSettings();
+      toast('Duvar kağıdı güncellendi');
+    };
+    reader.readAsDataURL(file);
+  }
+});
+document.getElementById('appsBtn').addEventListener('click', (e)=>{ e.stopPropagation(); toggleOverview(); });
+document.getElementById('placesBtn').addEventListener('click', ()=>{
+  filesCwd=['home','mike']; renderFiles();
+  openApp('files');
+});
+document.getElementById('wsCycle').addEventListener('click', ()=>{
+  state.ws = state.ws % 4 + 1;
+  document.getElementById('wsNum').textContent = state.ws;
+  document.querySelectorAll('#ws-indicator span').forEach((s,i)=>s.classList.toggle('active', i===state.ws-1));
+});
+document.addEventListener('keydown', e=>{
+  if(e.target.id==='webAddr' && e.key==='Enter'){ webGo(e.target.value.trim()); return; }
+  if(e.target.id==='chatInput' && e.key==='Enter'){ chatSend(); return; }
+  const alt = e.altKey;
+  if(alt && e.key==='Enter'){ e.preventDefault(); openApp('terminal'); }
+  if(alt && e.key.toLowerCase()==='e'){ e.preventDefault(); openApp('files'); }
+  if(alt && e.key.toLowerCase()==='a'){ e.preventDefault(); toggleOverview(); }
+  if(alt && e.key.toLowerCase()==='q'){ e.preventDefault(); if(state.openApps.length) closeApp(state.focused); }
+  if(e.key==='Escape'){ closeOverview(); }
+  if(alt && ['1','2','3','4'].includes(e.key)){
+    e.preventDefault(); state.ws=parseInt(e.key);
+    document.getElementById('wsNum').textContent=state.ws;
+    document.querySelectorAll('#ws-indicator span').forEach((s,i)=>s.classList.toggle('active', i===state.ws-1));
+  }
+});
+window.addEventListener('resize', layoutWindows);
+
+/* ===================== LIVE PANEL ===================== */
+function tick2(){
+  document.getElementById('pCpu').textContent = (Math.floor(Math.random()*8)+1)+'%';
+  document.getElementById('pRam').textContent = (41+Math.floor(Math.random()*5))+'%';
+  document.getElementById('pDown').textContent = (Math.random()*3+0.5).toFixed(2)+' KB/s';
+  document.getElementById('pUp').textContent = Math.floor(Math.random()*500+100)+' B/s';
+  document.getElementById('pTemp').textContent = (48+Math.floor(Math.random()*5))+'°C';
+  if(document.getElementById('win-monitor').style.display!=='none') renderMonitor();
+}
+function tickClock(){
+  const d = new Date();
+  document.getElementById('pClock').textContent = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  document.getElementById('clockDate').innerHTML = icon('weather')+' -2°C &nbsp; '+d.toDateString();
+}
+
+/* ===================== BOOT / INIT ===================== */
+function boot(){
+  const lines = ['Initializing PaperVM...','Starting virtual hardware...','Loading GNOME Shell...',
+    'Starting PaperVM extension...','Mounting virtual filesystem...','Ready.'];
+  const el = document.getElementById('boot');
+  let i=0;
+  const step = ()=>{
+    if(i<lines.length){ el.textContent += (i?'\n':'')+lines[i]; i++; setTimeout(step,140); }
+    else setTimeout(startDesktop, 250);
+  };
+  step();
+}
+function initIcons(){
+  document.getElementById('logoIcon').innerHTML = ICONS.logo;
+  document.getElementById('battIcon').innerHTML = icon('battery');
+  document.querySelectorAll('.icon-slot').forEach(s=>{ s.innerHTML = appIcon(s.dataset.icon); s.className='icon-slot icon-sm'; });
+  document.querySelectorAll('button[data-close]').forEach(b=>{ b.innerHTML = icon('close'); });
+  renderAppsGrid();
+}
+function startDesktop(){
+  document.getElementById('boot').style.display='none';
+  document.getElementById('panel').style.display='flex';
+  document.getElementById('desktop').style.display='block';
+  loadPersist();
+  if(!state.fs) state.fs = defaultFS();
+  applyWallpaper();
+  applyPanelSize();
+  applyPanelTransparency();
+  initIcons();
+  renderPromptLine();
+  termPrint(fastfetchHTML());
+  renderMonitor();
+  renderFiles();
+  layoutWindows();
+  focusWin('terminal');
+  focusTermInput();
+  tickClock(); tick2();
+  setInterval(tickClock, 1000);
+  setInterval(tick2, 2000);
+}
+boot();
+</script>
+</body>
+</html>
